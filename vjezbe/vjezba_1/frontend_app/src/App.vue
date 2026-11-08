@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const API_URL = 'https://rs-vjezbe-backend-wz8l.onrender.com'
 
@@ -7,7 +7,93 @@ const avioni = ref([])
 const ucitavanje = ref(true)
 const greska = ref('')
 
+// ----- detalji aviona (GET /avioni/:id) -----
+const odabrani = ref(null)
+const detalji = ref(null)
+const detaljiUcitavanje = ref(false)
+const detaljiGreska = ref('')
+
+// ----- dodatne zanimljivosti (GET /avioni/:id/zanimljivost?n=) -----
+const dodatna = ref(null)
+const dodatnaUcitavanje = ref(false)
+const dodatnaGreska = ref('')
+let brojac = 0
+
+async function novaZanimljivost() {
+  const avion = odabrani.value
+  if (!avion || dodatnaUcitavanje.value) return
+  dodatnaUcitavanje.value = true
+  dodatnaGreska.value = ''
+  try {
+    const odgovor = await fetch(`${API_URL}/avioni/${avion.id}/zanimljivost?n=${brojac}`)
+    if (!odgovor.ok) throw new Error(`HTTP ${odgovor.status}`)
+    const podaci = await odgovor.json()
+    if (odabrani.value?.id === avion.id) {
+      dodatna.value = podaci
+      brojac++
+    }
+  } catch (e) {
+    if (odabrani.value?.id === avion.id) {
+      dodatnaGreska.value = 'Ne mogu dohvatiti zanimljivost s poslužitelja.'
+    }
+  } finally {
+    dodatnaUcitavanje.value = false
+  }
+}
+
+async function otvori(avion) {
+  odabrani.value = avion
+  detalji.value = null
+  detaljiGreska.value = ''
+  detaljiUcitavanje.value = true
+  dodatna.value = null
+  dodatnaGreska.value = ''
+  dodatnaUcitavanje.value = false
+  brojac = 0
+  try {
+    const odgovor = await fetch(`${API_URL}/avioni/${avion.id}`)
+    if (!odgovor.ok) throw new Error(`HTTP ${odgovor.status}`)
+    const podaci = await odgovor.json()
+    if (!podaci.detalji) throw new Error('Backend ne vraća detalje')
+    if (odabrani.value?.id === avion.id) detalji.value = podaci.detalji
+  } catch (e) {
+    if (odabrani.value?.id === avion.id) {
+      detaljiGreska.value = 'Ne mogu dohvatiti detalje s poslužitelja.'
+    }
+  } finally {
+    if (odabrani.value?.id === avion.id) detaljiUcitavanje.value = false
+  }
+}
+
+function zatvori() {
+  odabrani.value = null
+  detalji.value = null
+  dodatna.value = null
+}
+
+function naTipku(e) {
+  if (e.key === 'Escape') zatvori()
+}
+
+const stavkeDetalja = computed(() => {
+  const d = detalji.value
+  if (!d) return []
+  const stavke = [
+    ['Duljina', d.duljina],
+    ['Raspon krila', d.rasponKrila],
+    ['Brzina', d.brzina],
+    ['Domet', d.domet],
+    ['Pogon', d.motori],
+    ['Maks. masa', d.maksimalnaMasa],
+  ]
+  if (d.proizvedeno) {
+    stavke.push(['Proizvedeno', `${d.proizvedeno.toLocaleString('hr-HR')} kom`])
+  }
+  return stavke
+})
+
 onMounted(async () => {
+  window.addEventListener('keydown', naTipku)
   try {
     const odgovor = await fetch(`${API_URL}/avioni`)
     if (!odgovor.ok) throw new Error(`HTTP ${odgovor.status}`)
@@ -18,6 +104,8 @@ onMounted(async () => {
     ucitavanje.value = false
   }
 })
+
+onUnmounted(() => window.removeEventListener('keydown', naTipku))
 
 const tipovi = computed(() => ['Svi', ...new Set(avioni.value.map((a) => a.tip))])
 
@@ -103,7 +191,16 @@ const prikaz = computed(() => {
       </section>
 
       <section class="mreza">
-        <article v-for="a in prikaz" :key="a.id" class="kartica">
+        <article
+          v-for="a in prikaz"
+          :key="a.id"
+          class="kartica"
+          tabindex="0"
+          role="button"
+          :aria-label="'Prikaži detalje: ' + a.naziv"
+          @click="otvori(a)"
+          @keydown.enter="otvori(a)"
+        >
           <div class="ikona">{{ a.emoji }}</div>
           <span class="tip">{{ a.tip }}</span>
           <h2>{{ a.naziv }}</h2>
@@ -120,6 +217,8 @@ const prikaz = computed(() => {
               <dd>{{ a.mjesta }}</dd>
             </div>
           </dl>
+
+          <span class="vise">Prikaži detalje →</span>
         </article>
 
         <p v-if="ucitavanje" class="prazno">
@@ -161,6 +260,56 @@ const prikaz = computed(() => {
     </section>
 
     <footer>Raspodijeljeni sustavi · Vježba 1</footer>
+
+    <!-- ---------- MODAL S DETALJIMA ---------- -->
+    <div v-if="odabrani" class="pozadina" @click.self="zatvori">
+      <div class="modal" role="dialog" aria-modal="true">
+        <button class="zatvori" @click="zatvori" aria-label="Zatvori">✕</button>
+
+        <div class="modal-glava">
+          <div class="modal-ikona">{{ odabrani.emoji }}</div>
+          <div>
+            <span class="tip">{{ odabrani.tip }}</span>
+            <h2>{{ odabrani.naziv }}</h2>
+            <p class="proizvodac">{{ odabrani.proizvodac }} · prvi let {{ odabrani.prviLet }}.</p>
+          </div>
+        </div>
+
+        <p v-if="detaljiUcitavanje" class="modal-status">
+          Dohvaćam detalje s poslužitelja...
+        </p>
+        <p v-else-if="detaljiGreska" class="modal-status">{{ detaljiGreska }}</p>
+
+        <template v-else-if="detalji">
+          <div class="specifikacije">
+            <div v-for="[naziv, vrijednost] in stavkeDetalja" :key="naziv">
+              <dt>{{ naziv }}</dt>
+              <dd>{{ vrijednost }}</dd>
+            </div>
+          </div>
+
+          <div class="zanimljivost">
+            <strong>💡 Znaš li?</strong>
+            <p>{{ detalji.zanimljivost }}</p>
+          </div>
+
+          <div class="dodatna">
+            <button class="gumb-vise" :disabled="dodatnaUcitavanje" @click="novaZanimljivost">
+              {{ dodatnaUcitavanje ? 'Dohvaćam...' : dodatna ? '🔄 Još jedna zanimljivost' : '✨ Prikaži zanimljivost' }}
+            </button>
+
+            <p v-if="dodatnaGreska" class="modal-status">{{ dodatnaGreska }}</p>
+
+            <div v-if="dodatna" class="zanimljivost nova">
+              <strong>🎯 Zanimljivost {{ dodatna.redniBroj }}/{{ dodatna.ukupno }}</strong>
+              <p>{{ dodatna.zanimljivost }}</p>
+            </div>
+          </div>
+
+          <p class="izvor">Podaci dohvaćeni s <code>GET /avioni/{{ odabrani.id }}</code></p>
+        </template>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -338,9 +487,25 @@ input:focus, select:focus { outline: 2px solid #3b82f6; }
   border: 1px solid #263450;
   border-radius: 16px;
   padding: 1.5rem;
-  transition: transform .2s, border-color .2s;
+  cursor: pointer;
+  transition: transform .2s, border-color .2s, box-shadow .2s;
 }
-.kartica:hover { transform: translateY(-4px); border-color: #3b82f6; }
+.kartica:hover {
+  transform: translateY(-4px);
+  border-color: #3b82f6;
+  box-shadow: 0 12px 28px rgba(59, 130, 246, .15);
+}
+.kartica:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+.vise {
+  display: inline-block;
+  margin-top: 1rem;
+  font-size: .85rem;
+  font-weight: 600;
+  color: #60a5fa;
+  transition: transform .15s;
+}
+.kartica:hover .vise { transform: translateX(4px); }
 
 .ikona { font-size: 2.5rem; margin-bottom: .5rem; }
 .tip {
@@ -367,6 +532,112 @@ dt { font-size: .75rem; color: #8ea0bf; text-transform: uppercase; letter-spacin
 dd { margin: .2rem 0 0; font-size: 1.2rem; font-weight: 700; }
 
 .prazno { grid-column: 1 / -1; text-align: center; color: #8ea0bf; }
+
+/* ---------- MODAL ---------- */
+.pozadina {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(5, 10, 20, .75);
+  backdrop-filter: blur(4px);
+  animation: pojavi .2s ease-out;
+}
+@keyframes pojavi { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 2rem;
+  background: #131c30;
+  border: 1px solid #3b82f6;
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+  animation: izlaz .25s ease-out;
+}
+@keyframes izlaz {
+  from { opacity: 0; transform: translateY(20px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.zatvori {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #263450;
+  background: #0b1220;
+  color: #c7d2e6;
+  cursor: pointer;
+  font-size: .9rem;
+}
+.zatvori:hover { border-color: #3b82f6; color: #fff; }
+
+.modal-glava { display: flex; align-items: center; gap: 1.25rem; margin-bottom: 1.5rem; padding-right: 2rem; }
+.modal-ikona { font-size: 3.5rem; }
+.modal-glava .proizvodac { margin: 0; }
+.modal-glava h2 { font-size: 1.6rem; }
+
+.modal-status { color: #8ea0bf; text-align: center; padding: 1.5rem 0; margin: 0; }
+
+.specifikacije {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.specifikacije > div {
+  padding: .9rem 1rem;
+  background: #0b1220;
+  border: 1px solid #263450;
+  border-radius: 12px;
+}
+.specifikacije dd { font-size: 1rem; }
+
+.zanimljivost {
+  padding: 1rem 1.25rem;
+  background: rgba(59, 130, 246, .1);
+  border-left: 3px solid #3b82f6;
+  border-radius: 8px;
+}
+.zanimljivost p { margin: .4rem 0 0; color: #c7d2e6; line-height: 1.5; font-size: .95rem; }
+
+.dodatna { margin-top: 1rem; }
+.gumb-vise {
+  width: 100%;
+  padding: .8rem;
+  border-radius: 10px;
+  border: 1px solid #3b82f6;
+  background: transparent;
+  color: #93c5fd;
+  font-size: .95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.gumb-vise:hover:not(:disabled) { background: #3b82f6; color: #fff; }
+.gumb-vise:disabled { opacity: .6; cursor: wait; }
+.zanimljivost.nova {
+  margin-top: 1rem;
+  border-left-color: #a78bfa;
+  background: rgba(167, 139, 250, .1);
+  animation: izlaz .25s ease-out;
+}
+
+.izvor { margin: 1.25rem 0 0; font-size: .8rem; color: #6b7a99; text-align: center; }
+.izvor code { color: #60a5fa; }
+
+@media (max-width: 480px) {
+  .specifikacije { grid-template-columns: 1fr; }
+}
 
 /* ---------- HRADAR ---------- */
 .hradar { max-width: 1100px; margin: 0 auto; padding: 0 1.25rem 3rem; }
