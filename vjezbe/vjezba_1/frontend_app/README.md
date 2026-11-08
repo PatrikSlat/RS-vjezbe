@@ -1,3 +1,3 @@
 # Frontend (Vježba 1)
 
-Deployana aplikacija: https://TVOJ-URL.onrender.com
+Deployana aplikacija: https://rs-vjezbe-1-5mks.onrender.com
