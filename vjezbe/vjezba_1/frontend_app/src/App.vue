@@ -1,80 +1,39 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 
-const avioni = [
-  {
-    id: 1,
-    naziv: 'Airbus A380',
-    proizvodac: 'Airbus',
-    tip: 'Putnički',
-    prviLet: 2005,
-    mjesta: 525,
-    opis: 'Najveći putnički zrakoplov na svijetu, s dvije pune putničke palube.',
-    emoji: '✈️',
-  },
-  {
-    id: 2,
-    naziv: 'Boeing 747-400',
-    proizvodac: 'Boeing',
-    tip: 'Putnički',
-    prviLet: 1969,
-    mjesta: 416,
-    opis: 'Poznat kao "Jumbo Jet" po prepoznatljivoj grbi na prednjem dijelu trupa.',
-    emoji: '🛫',
-  },
-  {
-    id: 3,
-    naziv: 'Concorde',
-    proizvodac: 'BAC / Aérospatiale',
-    tip: 'Nadzvučni',
-    prviLet: 1969,
-    mjesta: 100,
-    opis: 'Putnički avion koji je letio brže od zvuka, a posljednji let imao je 2003.',
-    emoji: '🚀',
-  },
-  {
-    id: 4,
-    naziv: 'Lockheed SR-71',
-    proizvodac: 'Lockheed',
-    tip: 'Vojni',
-    prviLet: 1964,
-    mjesta: 2,
-    opis: 'Izviđački avion koji je letio brzinom većom od tri Macha.',
-    emoji: '🦅',
-  },
-  {
-    id: 5,
-    naziv: 'Cessna 172',
-    proizvodac: 'Cessna',
-    tip: 'Mali / školski',
-    prviLet: 1955,
-    mjesta: 4,
-    opis: 'Najproizvedeniji zrakoplov u povijesti, omiljen za školovanje pilota.',
-    emoji: '🛩️',
-  },
-  {
-    id: 6,
-    naziv: 'Boeing 787-9 Dreamliner',
-    proizvodac: 'Boeing',
-    tip: 'Putnički',
-    prviLet: 2009,
-    mjesta: 290,
-    opis: 'Moderan dalekolinijski avion s trupom od kompozitnih materijala.',
-    emoji: '🌍',
-  },
-]
+const API_URL = 'https://rs-vjezbe-backend-wz8l.onrender.com'
 
-const tipovi = ['Svi', ...new Set(avioni.map((a) => a.tip))]
+const avioni = ref([])
+const ucitavanje = ref(true)
+const greska = ref('')
 
-const najstarijiLet = Math.min(...avioni.map((a) => a.prviLet))
-const najnovijiLet = Math.max(...avioni.map((a) => a.prviLet))
+onMounted(async () => {
+  try {
+    const odgovor = await fetch(`${API_URL}/avioni`)
+    if (!odgovor.ok) throw new Error(`HTTP ${odgovor.status}`)
+    avioni.value = await odgovor.json()
+  } catch (e) {
+    greska.value = 'Ne mogu dohvatiti avione s poslužitelja.'
+  } finally {
+    ucitavanje.value = false
+  }
+})
+
+const tipovi = computed(() => ['Svi', ...new Set(avioni.value.map((a) => a.tip))])
+
+const najstarijiLet = computed(() =>
+  avioni.value.length ? Math.min(...avioni.value.map((a) => a.prviLet)) : '–'
+)
+const najnovijiLet = computed(() =>
+  avioni.value.length ? Math.max(...avioni.value.map((a) => a.prviLet)) : '–'
+)
 
 const odabraniTip = ref('Svi')
 const trazi = ref('')
 const sortiranje = ref('godina')
 
 const prikaz = computed(() => {
-  let lista = avioni.filter(
+  let lista = avioni.value.filter(
     (a) =>
       (odabraniTip.value === 'Svi' || a.tip === odabraniTip.value) &&
       a.naziv.toLowerCase().includes(trazi.value.toLowerCase())
@@ -163,7 +122,11 @@ const prikaz = computed(() => {
           </dl>
         </article>
 
-        <p v-if="prikaz.length === 0" class="prazno">
+        <p v-if="ucitavanje" class="prazno">
+          Učitavam avione s poslužitelja... (prvi put može trajati do minute)
+        </p>
+        <p v-else-if="greska" class="prazno">{{ greska }}</p>
+        <p v-else-if="prikaz.length === 0" class="prazno">
           Nema aviona koji odgovaraju pretrazi.
         </p>
       </section>
